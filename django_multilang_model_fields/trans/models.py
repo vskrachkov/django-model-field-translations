@@ -9,7 +9,7 @@ class TranslationQuerySet(models.QuerySet):
         for f in fields_to_update:
             if f in self.model.get_translation_model_field_names():
                 trans_val = kwargs.pop(f, None)
-                if trans_val: trans_fields_to_update[f] = trans_val
+                trans_fields_to_update[f] = trans_val
 
         # update all related translation
         for obj in self:
