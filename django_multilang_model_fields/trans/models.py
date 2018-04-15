@@ -98,16 +98,10 @@ class LangMixin(models.Model):
         abstract = True
 
 
-class ContentTranslationFields(models.Model):
+class ContentTranslation(LangMixin, models.Model):
     name = models.CharField(max_length=256)
     full_name = models.CharField(max_length=256)
     description = models.TextField()
-
-    class Meta:
-        abstract = True
-
-
-class ContentTranslation(ContentTranslationFields, LangMixin):
     main_model = models.ForeignKey(
         to='Content', on_delete=models.CASCADE,
         related_query_name='translation', related_name='translation'
