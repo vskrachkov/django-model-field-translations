@@ -1,19 +1,49 @@
 from django.db import models
+from django.db.models.manager import BaseManager
 
 
-class TranslationManager(models.Manager):
+class TranslationQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        fields_to_update = list(kwargs.keys())
+        trans_fields_to_update = {}
+        for f in fields_to_update:
+            if f in self.model.get_translation_model_field_names():
+                trans_val = kwargs.pop(f, None)
+                if trans_val: trans_fields_to_update[f] = trans_val
+
+        # update all related translation
+        for obj in self:
+            trans_manager = getattr(
+                obj, self.model.get_translation_model_reverse_field_name()
+            )
+            lang_field_name = self.model.get_lang_field_name()
+
+            # if lang field exists in fields to update than we need
+            # to create new translation else update existing
+            updated = 0
+            if lang_field_name not in trans_fields_to_update:
+                updated = trans_manager.all().update(**trans_fields_to_update)
+
+            if not updated:
+                # create new translation with taken params
+                trans_manager.create(**trans_fields_to_update)
+
+        super().update(**kwargs)
+
+
+class TranslationManager(BaseManager.from_queryset(TranslationQuerySet)):
     def get_translation_model(self):
         return self.model.get_translation_model()
 
-    def get_translation_model_reverse_field_name(self):
-        return self.model.get_translation_model_reverse_field_name()
+    def get_translation_model_reverse_query_name(self):
+        return self.model.get_translation_model_reverse_query_name()
 
     def get_translation_model_field_names(self, reverse=False, m2m=False,
                                           own=True):
         return self.model.get_translation_model_field_names(reverse, m2m, own)
 
     def get_annotate_params(self):
-        reverse_name = self.get_translation_model_reverse_field_name()
+        reverse_name = self.get_translation_model_reverse_query_name()
         fields = self.get_translation_model_field_names()
         annotate_params = {}
         for f in fields:
@@ -32,6 +62,10 @@ class TranslationMixin(models.Model):
     @classmethod
     def get_translation_model(cls):
         return cls.translation_model
+
+    @classmethod
+    def get_lang_field_name(cls):
+        return cls.get_translation_model().get_lang_field_name()
 
     @classmethod
     def get_translation_model_field_names(cls, reverse=False, m2m=False,
@@ -70,7 +104,7 @@ class TranslationMixin(models.Model):
         return list(result)
 
     @classmethod
-    def get_translation_model_reverse_field_name(cls):
+    def _check_translation_model_reverse_fields(cls):
         reverse_fields = cls.get_translation_model_field_names(
             reverse=True, m2m=False, own=False)
         if len(reverse_fields) > 1:
@@ -80,10 +114,25 @@ class TranslationMixin(models.Model):
             raise Exception('Translation model must define foreign key '
                             'relation to main model')
 
+    @classmethod
+    def get_translation_model_reverse_query_name(cls):
+        cls._check_translation_model_reverse_fields()
+
         TransModel = cls.get_translation_model()
         for f in cls._meta.get_fields():
             if f.related_model == TransModel:
                 return f.related_query_name
+        else:
+            raise Exception('Reverse relation does not exists in Main model')
+
+    @classmethod
+    def get_translation_model_reverse_field_name(cls):
+        cls._check_translation_model_reverse_fields()
+
+        TransModel = cls.get_translation_model()
+        for f in cls._meta.get_fields():
+            if f.related_model == TransModel:
+                return f.related_name
         else:
             raise Exception('Reverse relation does not exists in Main model')
 
@@ -96,6 +145,10 @@ class LangMixin(models.Model):
 
     class Meta:
         abstract = True
+
+    @classmethod
+    def get_lang_field_name(cls):
+        return 'lang'
 
 
 class ContentTranslation(LangMixin, models.Model):
