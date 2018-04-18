@@ -164,3 +164,55 @@ class ContentTranslation(LangMixin, models.Model):
 class Content(TranslationMixin):
     translation_model = ContentTranslation
     objects = TranslationManager()
+
+
+def _create_model(name, base, attrs=None, meta_attrs=None):
+    if not meta_attrs:
+        meta_attrs = {}
+
+    Meta = type('Meta', (object,), meta_attrs)
+
+    if not attrs:
+        attrs = {}
+
+    if not attrs.get('__module__'):
+        attrs['__module__'] = __name__
+
+    attrs.update({'Meta': Meta})
+
+    Model = type(name, base, attrs)
+
+    return Model
+
+
+def translatable(translation_table=None):
+    def wrapper(model_class):
+        if getattr(model_class, 'translation_model', None):
+            return
+        fields_map = model_class.translatable_fields
+        fields_map['main_model'] = models.ForeignKey(
+            to=model_class, on_delete=models.CASCADE,
+            related_name='translations', related_query_name='translations'
+        )
+
+        tr_model_name = f'{model_class.__name__}Translation'
+        tr_model = _create_model(
+            name=tr_model_name,
+            base=(TranslationMixin, models.Model, ),
+            attrs=fields_map,
+            meta_attrs={'db_table': translation_table or tr_model_name.lower()}
+        )
+
+        setattr(model_class, 'translation_model', tr_model)
+
+        return model_class
+
+    return wrapper
+
+
+@translatable(translation_table='article_translation')
+class Article(models.Model):
+    translatable_fields = dict(
+        name=models.TextField(),
+        description=models.TextField()
+    )
